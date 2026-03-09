@@ -31,6 +31,9 @@ export default function FamiliadaHome() {
             router.push(`/familiada/${id}/setup`);
           }}
         >
+        <a className="rounded-xl border px-4 py-3 inline-block" href="/familiada/games">
+          Panel gier →
+        </a>
           {loading ? "Tworzę..." : "Utwórz grę"}
         </button>
       </div>

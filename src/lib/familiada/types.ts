@@ -41,4 +41,32 @@ export type LiveStateDoc = {
     startedAt: any | null; // Firestore Timestamp
     durationSec: number;
   };
+  timerEnabled?: boolean;     // default false
+  activeTeamId?: string | null; // która drużyna teraz odpowiada (dla X)
+  steal: {
+    enabled: boolean;
+    teamId: string | null; // kto przejmuje
+  };
+  sfx?: {
+    name: "reveal" | "wrong" | "intro" | "win" | "won" | null;
+    at: any | null; // serverTimestamp
+  };
+  lastAward?: {
+    teamId: string;
+    points: number;
+    at: any | null; // serverTimestamp
+  } | null;
+
+  lastStrike?: {
+    teamId: string;
+    prev: number;
+    next: number;
+    at: any | null;
+  } | null;
+  overlay?: {
+    type: "round";
+    text: string;        // np. "RUNDA II"
+    at: any | null;      // serverTimestamp
+    durationMs: number;  // np. 2500
+  } | null;
 };

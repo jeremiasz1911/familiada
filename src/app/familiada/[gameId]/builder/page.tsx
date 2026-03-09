@@ -1,12 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter, useParams } from "next/navigation";
 import { addQuestion, addRound, questionsQuery, roundsQuery } from "@/lib/familiada/service";
 import { useCollection } from "@/lib/familiada/hooks";
 import type { Answer, QuestionDoc, RoundDoc } from "@/lib/familiada/types";
+import { TeamsEditor } from "@/components/familiada/TeamsEditor";
+import { QuestionsEditor } from "@/components/familiada/QuestionsEditor";
 
-export default function BuilderPage({ params }: { params: { gameId: string } }) {
-  const { gameId } = params;
+export default function BuilderPage(){
+  const router = useRouter();
+  const params = useParams();
+  const gameId = params.gameId as string;
 
   const rq = useMemo(() => roundsQuery(gameId), [gameId]);
   const { data: rounds } = useCollection<RoundDoc>(rq);
@@ -16,9 +21,13 @@ export default function BuilderPage({ params }: { params: { gameId: string } }) 
   const [type, setType] = useState<"normal" | "final">("normal");
   const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null);
 
-  const qq = useMemo(() => (selectedRoundId ? questionsQuery(gameId, selectedRoundId) : null), [gameId, selectedRoundId]);
-  const { data: questions } = useCollection<QuestionDoc>(qq as any);
+  const qq = useMemo(
+    () => (selectedRoundId ? questionsQuery(gameId, selectedRoundId) : null),
+    [gameId, selectedRoundId]
+  );
 
+  const { data: questions, loading: questionsLoading, error: questionsError } =
+    useCollection<QuestionDoc>(qq);
   const [qText, setQText] = useState("");
   const [timeLimit, setTimeLimit] = useState(20);
   const [answers, setAnswers] = useState<Answer[]>([
@@ -28,8 +37,8 @@ export default function BuilderPage({ params }: { params: { gameId: string } }) 
 
   return (
     <main className="p-6 max-w-5xl mx-auto">
-      <h1 className="text-3xl font-black">Builder</h1>
-
+      <h1 className="text-3xl font-black pb-5">Builder</h1>
+      <TeamsEditor gameId={gameId} />
       <div className="mt-6 grid md:grid-cols-2 gap-6">
         {/* RUNDY */}
         <div className="rounded-2xl border p-4 bg-white/5">
@@ -141,7 +150,7 @@ export default function BuilderPage({ params }: { params: { gameId: string } }) 
                     + Dodaj odpowiedź
                   </button>
                 </div>
-
+                  <QuestionsEditor gameId={gameId} />
                 <button
                   className="rounded-xl px-4 py-3 font-semibold bg-white text-black disabled:opacity-60"
                   disabled={!qText.trim()}
@@ -176,7 +185,7 @@ export default function BuilderPage({ params }: { params: { gameId: string } }) 
           )}
         </div>
       </div>
-
+          
       <div className="mt-8 flex gap-3">
         <a className="rounded-xl px-4 py-3 font-semibold border" href={`/familiada/${gameId}/play`}>
           Tryb prowadzącego →

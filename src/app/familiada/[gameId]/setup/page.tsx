@@ -1,14 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { addTeam, teamsQuery } from "@/lib/familiada/service";
 import { useCollection } from "@/lib/familiada/hooks";
 import type { TeamDoc } from "@/lib/familiada/types";
 
-export default function SetupPage({ params }: { params: { gameId: string } }) {
+export default function SetupPage() {
   const router = useRouter();
-  const { gameId } = params;
+  const params = useParams();
+  const gameId = params.gameId as string;
 
   const q = useMemo(() => teamsQuery(gameId), [gameId]);
   const { data: teams } = useCollection<TeamDoc>(q);

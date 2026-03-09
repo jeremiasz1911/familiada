@@ -1,33 +1,93 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { DocumentReference, Query } from "firebase/firestore";
+import type { DocumentReference, Query, Unsubscribe } from "firebase/firestore";
 import { onSnapshot } from "firebase/firestore";
 
-export function useDoc<T>(ref: DocumentReference) {
-  const [data, setData] = useState<(T & { id: string }) | null>(null);
-  const [loading, setLoading] = useState(true);
+type WithId<T> = T & { id: string };
+
+type DocState<T> = {
+  data: WithId<T> | null;
+  loading: boolean;
+  error: Error | null;
+};
+
+type ColState<T> = {
+  data: Array<WithId<T>>;
+  loading: boolean;
+  error: Error | null;
+};
+
+export function useDoc<T>(ref: DocumentReference | null): DocState<T> {
+  const key = ref ? `${ref.firestore.app.name}:${ref.path}` : "null";
+
+  const [state, setState] = useState<DocState<T>>({
+    data: null,
+    loading: !!ref,
+    error: null,
+  });
 
   useEffect(() => {
-    return onSnapshot(ref, (snap) => {
-      setData(snap.exists() ? ({ id: snap.id, ...(snap.data() as T) } as any) : null);
-      setLoading(false);
-    });
-  }, [ref]);
+    if (!ref) {
+      setState({ data: null, loading: false, error: null });
+      return;
+    }
 
-  return { data, loading };
+    let unsub: Unsubscribe | undefined;
+
+    // ustaw loading tylko raz na zmianę key
+    setState((s) => (s.loading ? s : { ...s, loading: true, error: null }));
+
+    unsub = onSnapshot(
+      ref,
+      (snap) => {
+        setState({
+          data: snap.exists()
+            ? ({ id: snap.id, ...(snap.data() as T) } as WithId<T>)
+            : null,
+          loading: false,
+          error: null,
+        });
+      },
+      (err) => setState({ data: null, loading: false, error: err })
+    );
+
+    return () => unsub?.();
+  }, [key]); // <- UWAGA: zależność po "key", nie po "ref"
+
+  return state;
 }
 
-export function useCollection<T>(q: Query) {
-  const [data, setData] = useState<Array<T & { id: string }>>([]);
-  const [loading, setLoading] = useState(true);
+export function useCollection<T>(q: Query | null): ColState<T> {
+  const [state, setState] = useState<ColState<T>>({
+    data: [],
+    loading: !!q,
+    error: null,
+  });
 
   useEffect(() => {
-    return onSnapshot(q, (snap) => {
-      setData(snap.docs.map((d) => ({ id: d.id, ...(d.data() as T) } as any)));
-      setLoading(false);
-    });
+    if (!q) {
+      setState({ data: [], loading: false, error: null });
+      return;
+    }
+
+    let unsub: Unsubscribe | undefined;
+    setState((s) => (s.loading ? s : { ...s, loading: true, error: null }));
+
+    unsub = onSnapshot(
+      q,
+      (snap) => {
+        setState({
+          data: snap.docs.map((d) => ({ id: d.id, ...(d.data() as T) } as WithId<T>)),
+          loading: false,
+          error: null,
+        });
+      },
+      (err) => setState({ data: [], loading: false, error: err })
+    );
+
+    return () => unsub?.();
   }, [q]);
 
-  return { data, loading };
+  return state;
 }
