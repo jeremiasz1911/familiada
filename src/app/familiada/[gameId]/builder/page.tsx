@@ -1,199 +1,109 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter, useParams } from "next/navigation";
-import { addQuestion, addRound, questionsQuery, roundsQuery } from "@/lib/familiada/service";
-import { useCollection } from "@/lib/familiada/hooks";
-import type { Answer, QuestionDoc, RoundDoc } from "@/lib/familiada/types";
+import { useParams } from "next/navigation";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+
 import { TeamsEditor } from "@/components/familiada/TeamsEditor";
 import { QuestionsEditor } from "@/components/familiada/QuestionsEditor";
+import { RoundsEditor } from "@/components/familiada/RoundsEditor";
 
-export default function BuilderPage(){
-  const router = useRouter();
+function copy(text: string) {
+  navigator.clipboard.writeText(text);
+}
+
+export default function BuilderPage() {
   const params = useParams();
   const gameId = params.gameId as string;
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
 
-  const rq = useMemo(() => roundsQuery(gameId), [gameId]);
-  const { data: rounds } = useCollection<RoundDoc>(rq);
-
-  const [roundTitle, setRoundTitle] = useState("Runda 1");
-  const [mult, setMult] = useState(1);
-  const [type, setType] = useState<"normal" | "final">("normal");
-  const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null);
-
-  const qq = useMemo(
-    () => (selectedRoundId ? questionsQuery(gameId, selectedRoundId) : null),
-    [gameId, selectedRoundId]
-  );
-
-  const { data: questions, loading: questionsLoading, error: questionsError } =
-    useCollection<QuestionDoc>(qq);
-  const [qText, setQText] = useState("");
-  const [timeLimit, setTimeLimit] = useState(20);
-  const [answers, setAnswers] = useState<Answer[]>([
-    { text: "mleko", points: 32 },
-    { text: "mięso", points: 27 },
-  ]);
+  const tv = `${origin}/familiada/${gameId}/screen`;
+  const play = `${origin}/familiada/${gameId}/play`;
+  const setup = `${origin}/familiada/${gameId}/setup`;
 
   return (
-    <main className="p-6 max-w-5xl mx-auto">
-      <h1 className="text-3xl font-black pb-5">Builder</h1>
-      <TeamsEditor gameId={gameId} />
-      <div className="mt-6 grid md:grid-cols-2 gap-6">
-        {/* RUNDY */}
-        <div className="rounded-2xl border p-4 bg-white/5">
-          <h2 className="text-xl font-bold">Rundy</h2>
-
-          <div className="mt-3 grid gap-2">
-            {rounds.map((r) => (
-              <button
-                key={r.id}
-                className={`rounded-xl border p-3 text-left transition ${
-                  selectedRoundId === r.id ? "bg-white text-black" : "bg-transparent"
-                }`}
-                onClick={() => setSelectedRoundId(r.id)}
-              >
-                <div className="font-black">
-                  {r.title} <span className="opacity-70">x{r.multiplier}</span>
-                </div>
-                <div className="text-sm opacity-70">{r.type}</div>
-              </button>
-            ))}
+    <main className="p-4 md:p-6 max-w-6xl mx-auto">
+      <Card className="bg-white/5 border-white/10">
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-xl md:text-2xl">Builder</CardTitle>
+            <div className="text-xs opacity-70 mt-1">GameId: {gameId}</div>
           </div>
 
-          <div className="mt-4 grid gap-2">
-            <input className="rounded-xl border bg-transparent p-3" value={roundTitle} onChange={(e) => setRoundTitle(e.target.value)} />
-            <div className="flex gap-2">
-              <input
-                className="rounded-xl border bg-transparent p-3 w-24"
-                type="number"
-                min={1}
-                max={10}
-                value={mult}
-                onChange={(e) => setMult(Number(e.target.value))}
-              />
-              <select className="rounded-xl border bg-transparent p-3 flex-1" value={type} onChange={(e) => setType(e.target.value as any)}>
-                <option value="normal">normal</option>
-                <option value="final">final</option>
-              </select>
-            </div>
-            <button
-              className="rounded-xl px-4 py-3 font-semibold bg-white text-black"
-              onClick={async () => {
-                await addRound(gameId, {
-                  index: rounds.length,
-                  title: roundTitle || `Runda ${rounds.length + 1}`,
-                  multiplier: mult || 1,
-                  type,
-                });
-              }}
-            >
-              Dodaj rundę
-            </button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => window.open(tv, "_blank")}>TV</Button>
+            <Button variant="secondary" onClick={() => window.open(play, "_blank")}>Prowadzący</Button>
           </div>
-        </div>
+        </CardHeader>
 
-        {/* PYTANIA */}
-        <div className="rounded-2xl border p-4 bg-white/5">
-          <h2 className="text-xl font-bold">Pytania</h2>
-          {!selectedRoundId ? (
-            <p className="opacity-70 mt-2">Wybierz rundę po lewej.</p>
-          ) : (
-            <>
-              <div className="mt-3 grid gap-2">
-                <input
-                  className="rounded-xl border bg-transparent p-3"
-                  placeholder='Pytanie, np. "Co mamy w lodówce?"'
-                  value={qText}
-                  onChange={(e) => setQText(e.target.value)}
-                />
-                <input
-                  className="rounded-xl border bg-transparent p-3 w-40"
-                  type="number"
-                  min={5}
-                  max={120}
-                  value={timeLimit}
-                  onChange={(e) => setTimeLimit(Number(e.target.value))}
-                />
+        <CardContent>
+          <Tabs defaultValue="questions" className="w-full">
+            <TabsList className="w-full grid grid-cols-4">
+              <TabsTrigger value="rounds">Rundy</TabsTrigger>
+              <TabsTrigger value="questions">Pytania</TabsTrigger>
+              <TabsTrigger value="teams">Drużyny</TabsTrigger>
+              <TabsTrigger value="links">Linki</TabsTrigger>
+            </TabsList>
 
-                <div className="mt-2 grid gap-2">
-                  {answers.map((a, idx) => (
-                    <div key={idx} className="flex gap-2">
-                      <input
-                        className="rounded-xl border bg-transparent p-3 flex-1"
-                        value={a.text}
-                        onChange={(e) => {
-                          const next = [...answers];
-                          next[idx] = { ...next[idx], text: e.target.value };
-                          setAnswers(next);
-                        }}
-                      />
-                      <input
-                        className="rounded-xl border bg-transparent p-3 w-28"
-                        type="number"
-                        value={a.points}
-                        onChange={(e) => {
-                          const next = [...answers];
-                          next[idx] = { ...next[idx], points: Number(e.target.value) };
-                          setAnswers(next);
-                        }}
-                      />
-                      <button
-                        className="rounded-xl border px-3"
-                        onClick={() => setAnswers(answers.filter((_, i) => i !== idx))}
-                      >
-                        ✕
-                      </button>
+            <TabsContent value="rounds" className="mt-4">
+              <Accordion type="multiple" defaultValue={["todo"]} className="w-full">
+                <AccordionItem value="todo">
+                  <AccordionTrigger>Rundy – editor</AccordionTrigger>
+                  <AccordionContent>
+                    <div className="opacity-70 text-sm">
+                     <TabsContent value="rounds" className="mt-4">
+                        <RoundsEditor gameId={gameId} />
+                      </TabsContent>
                     </div>
-                  ))}
-                  <button className="rounded-xl border px-4 py-3" onClick={() => setAnswers([...answers, { text: "", points: 0 }])}>
-                    + Dodaj odpowiedź
-                  </button>
-                </div>
-                  <QuestionsEditor gameId={gameId} />
-                <button
-                  className="rounded-xl px-4 py-3 font-semibold bg-white text-black disabled:opacity-60"
-                  disabled={!qText.trim()}
-                  onClick={async () => {
-                    await addQuestion(gameId, selectedRoundId, {
-                      index: questions.length,
-                      text: qText.trim(),
-                      timeLimitSec: timeLimit,
-                      answers: answers.filter((a) => a.text.trim()),
-                    });
-                    setQText("");
-                  }}
-                >
-                  Zapisz pytanie
-                </button>
-              </div>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            </TabsContent>
 
-              <div className="mt-5">
-                <div className="font-bold">Lista pytań</div>
-                <div className="mt-2 grid gap-2">
-                  {questions.map((q) => (
-                    <div key={q.id} className="rounded-xl border p-3">
-                      <div className="font-semibold">{q.text}</div>
-                      <div className="text-sm opacity-70">
-                        {q.answers.map((a) => `${a.text} (${a.points})`).join(" • ")}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-          
-      <div className="mt-8 flex gap-3">
-        <a className="rounded-xl px-4 py-3 font-semibold border" href={`/familiada/${gameId}/play`}>
-          Tryb prowadzącego →
-        </a>
-        <a className="rounded-xl px-4 py-3 font-semibold border" href={`/familiada/${gameId}/screen`} target="_blank">
-          Ekran (TV) →
-        </a>
-      </div>
+            <TabsContent value="questions" className="mt-4">
+              <QuestionsEditor gameId={gameId} />
+            </TabsContent>
+
+            <TabsContent value="teams" className="mt-4">
+              <TeamsEditor gameId={gameId} />
+            </TabsContent>
+
+            <TabsContent value="links" className="mt-4">
+              <Card className="bg-black/10 border-white/10">
+                <CardHeader>
+                  <CardTitle className="text-base">Linki do gry</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-3">
+                  <div className="text-sm">
+                    <div className="opacity-70">TV</div>
+                    <div className="break-all">{tv}</div>
+                    <Button className="mt-2" variant="secondary" onClick={() => copy(tv)}>Kopiuj TV</Button>
+                  </div>
+
+                  <Separator className="bg-white/10" />
+
+                  <div className="text-sm">
+                    <div className="opacity-70">Prowadzący</div>
+                    <div className="break-all">{play}</div>
+                    <Button className="mt-2" variant="secondary" onClick={() => copy(play)}>Kopiuj prowadzącego</Button>
+                  </div>
+
+                  <Separator className="bg-white/10" />
+
+                  <div className="text-sm">
+                    <div className="opacity-70">Setup</div>
+                    <div className="break-all">{setup}</div>
+                    <Button className="mt-2" variant="secondary" onClick={() => copy(setup)}>Kopiuj setup</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
     </main>
   );
 }

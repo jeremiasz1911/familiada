@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   addDoc,
   collection,
@@ -11,8 +11,17 @@ import {
   serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
+
 import { db } from "@/lib/firebase/client";
 import { useCollection } from "@/lib/familiada/hooks";
+
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
 
 type TeamDoc = {
   name: string;
@@ -23,19 +32,17 @@ type TeamDoc = {
 };
 
 function parseMembers(text: string) {
+  // linie + dopuszczamy przecinki
   return text
     .split("\n")
+    .flatMap((line) => line.split(","))
     .map((s) => s.trim())
     .filter(Boolean);
 }
 
 export function TeamsEditor({ gameId }: { gameId: string }) {
   const q = useMemo(
-    () =>
-      query(
-        collection(db, "familiadaGames", gameId, "teams"),
-        orderBy("createdAt", "asc")
-      ),
+    () => query(collection(db, "familiadaGames", gameId, "teams"), orderBy("createdAt", "asc")),
     [gameId]
   );
 
@@ -80,60 +87,78 @@ export function TeamsEditor({ gameId }: { gameId: string }) {
   }
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-lg font-black">Drużyny</h2>
-        <div className="text-xs opacity-70">
+    <Card className="border-white/10 bg-white/5">
+      <CardHeader className="flex flex-row items-center justify-between gap-3">
+        <div>
+          <CardTitle className="text-lg">Drużyny</CardTitle>
+          <div className="text-xs opacity-70 mt-1">Dodawanie, edycja składu i reset wyniku.</div>
+        </div>
+
+        <Badge variant="secondary">
           {loading ? "Ładuję…" : `${teams.length} druż.`}
-        </div>
-      </div>
+        </Badge>
+      </CardHeader>
 
-      {error && (
-        <div className="mt-3 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">
-          {String(error.message ?? error)}
-        </div>
-      )}
-
-      {/* Dodawanie */}
-      <div className="mt-4 grid gap-2 rounded-2xl border border-white/10 bg-black/10 p-3">
-        <div className="text-sm font-semibold">Dodaj drużynę</div>
-        <input
-          className="w-full rounded-xl border border-white/10 bg-transparent p-3"
-          placeholder="Nazwa drużyny…"
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-        />
-        <textarea
-          className="w-full rounded-xl border border-white/10 bg-transparent p-3 min-h-[90px]"
-          placeholder={"Zawodnicy (1 linia = 1 osoba)\nnp.\nAnia\nBartek\nKuba"}
-          value={newMembers}
-          onChange={(e) => setNewMembers(e.target.value)}
-        />
-        <button
-          className="rounded-xl bg-white text-black px-4 py-3 font-semibold hover:opacity-90 transition"
-          onClick={addTeam}
-        >
-          Dodaj
-        </button>
-      </div>
-
-      {/* Lista */}
-      <div className="mt-4 grid gap-3">
-        {teams.map((t) => (
-          <TeamRow
-            key={t.id}
-            team={t}
-            onSave={(name, membersText) => saveTeam(t.id, name, membersText)}
-            onResetScore={() => resetScore(t.id)}
-            onDelete={() => removeTeam(t.id)}
-          />
-        ))}
-
-        {!loading && teams.length === 0 && (
-          <div className="opacity-70 text-sm">Brak drużyn. Dodaj pierwszą wyżej.</div>
+      <CardContent className="grid gap-4">
+        {error && (
+          <div className="rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">
+            {String(error.message ?? error)}
+          </div>
         )}
-      </div>
-    </section>
+
+        <Accordion type="multiple" defaultValue={["add", "list"]} className="w-full">
+          <AccordionItem value="add" className="border-white/10">
+            <AccordionTrigger>Dodaj drużynę</AccordionTrigger>
+            <AccordionContent>
+              <div className="grid gap-3">
+                <Input
+                  placeholder="Nazwa drużyny…"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                />
+                <Textarea
+                  placeholder={"Zawodnicy (1 linia = 1 osoba)\nMoże być też: Ania, Bartek, Kuba"}
+                  value={newMembers}
+                  onChange={(e) => setNewMembers(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <Button onClick={addTeam}>Dodaj</Button>
+                  <Button variant="secondary" onClick={() => { setNewName(""); setNewMembers(""); }}>
+                    Wyczyść
+                  </Button>
+                </div>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+
+          <AccordionItem value="list" className="border-white/10">
+            <AccordionTrigger>Lista drużyn</AccordionTrigger>
+            <AccordionContent>
+              {teams.length === 0 ? (
+                <div className="text-sm opacity-70">Brak drużyn. Dodaj pierwszą wyżej.</div>
+              ) : (
+                <div className="grid gap-3">
+                  {teams.map((t) => (
+                    <TeamRow
+                      key={t.id}
+                      team={t}
+                      onSave={(name, membersText) => saveTeam(t.id, name, membersText)}
+                      onResetScore={() => resetScore(t.id)}
+                      onDelete={() => removeTeam(t.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+
+        <Separator className="bg-white/10" />
+        <div className="text-xs opacity-60">
+          Tip: wynik w trakcie gry edytujesz w panelu prowadzącego (UNDO/±).
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -152,30 +177,37 @@ function TeamRow({
   const [membersText, setMembersText] = useState((team.members ?? []).join("\n"));
   const [saving, setSaving] = useState(false);
 
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black/10 p-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-sm font-semibold">Edytuj</div>
-        <div className="text-xs opacity-70 tabular-nums">Wynik: {team.score ?? 0}</div>
-      </div>
+  // jeśli dokument się zmieni z zewnątrz, odśwież local state
+  useEffect(() => {
+    setName(team.name ?? "");
+    setMembersText((team.members ?? []).join("\n"));
+  }, [team.id, team.updatedAt]);
 
-      <div className="mt-2 grid gap-2">
-        <input
-          className="w-full rounded-xl border border-white/10 bg-transparent p-3"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Nazwa…"
-        />
-        <textarea
-          className="w-full rounded-xl border border-white/10 bg-transparent p-3 min-h-[90px]"
+  return (
+    <Card className="border-white/10 bg-black/10">
+      <CardHeader className="py-3 flex flex-row items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-semibold truncate">{team.name}</div>
+          <div className="text-xs opacity-70">
+            Zawodnicy: {(team.members ?? []).length} • Wynik: <span className="tabular-nums">{team.score ?? 0}</span>
+          </div>
+        </div>
+
+        <Badge variant="secondary" className="tabular-nums">
+          {team.score ?? 0}
+        </Badge>
+      </CardHeader>
+
+      <CardContent className="pb-4 grid gap-3">
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nazwa…" />
+        <Textarea
           value={membersText}
           onChange={(e) => setMembersText(e.target.value)}
           placeholder="Zawodnicy (1 linia = 1 osoba)…"
         />
 
         <div className="flex flex-wrap gap-2">
-          <button
-            className="rounded-xl bg-white text-black px-4 py-2 font-semibold disabled:opacity-60"
+          <Button
             disabled={saving}
             onClick={async () => {
               setSaving(true);
@@ -184,23 +216,17 @@ function TeamRow({
             }}
           >
             {saving ? "Zapisuję…" : "Zapisz"}
-          </button>
+          </Button>
 
-          <button
-            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 hover:bg-white/10 transition"
-            onClick={onResetScore}
-          >
+          <Button variant="secondary" onClick={onResetScore}>
             Reset wyniku
-          </button>
+          </Button>
 
-          <button
-            className="rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-2 text-red-200 hover:bg-red-500/15 transition"
-            onClick={onDelete}
-          >
+          <Button variant="destructive" onClick={onDelete}>
             Usuń
-          </button>
+          </Button>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
