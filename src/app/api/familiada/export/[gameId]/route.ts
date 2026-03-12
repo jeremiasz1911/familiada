@@ -33,3 +33,9 @@ export async function GET(
 
   return NextResponse.json(payload);
 }
+
+  // export async function POST() {
+  //   const { gameId } = await params;
+  //   const body = await req.json();
+
+  //   // validate body here
