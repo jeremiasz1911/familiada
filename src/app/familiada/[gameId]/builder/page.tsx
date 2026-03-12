@@ -1,15 +1,17 @@
+// src/app/familiada/[gameId]/builder/page.tsx
 "use client";
 
 import { useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 
 import { TeamsEditor } from "@/components/familiada/TeamsEditor";
 import { QuestionsEditor } from "@/components/familiada/QuestionsEditor";
 import { RoundsEditor } from "@/components/familiada/RoundsEditor";
+import { FinalPlayersEditor } from "@/components/familiada/FinalPlayersEditor";
+import { FinalQuestionsEditor } from "@/components/familiada/FinalQuestionsEditor";
 
 function copy(text: string) {
   navigator.clipboard.writeText(text);
@@ -34,33 +36,27 @@ export default function BuilderPage() {
           </div>
 
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => window.open(tv, "_blank")}>TV</Button>
-            <Button variant="secondary" onClick={() => window.open(play, "_blank")}>Prowadzący</Button>
+            <Button variant="secondary" onClick={() => window.open(tv, "_blank")}>
+              TV
+            </Button>
+            <Button variant="secondary" onClick={() => window.open(play, "_blank")}>
+              Prowadzący
+            </Button>
           </div>
         </CardHeader>
 
         <CardContent>
           <Tabs defaultValue="questions" className="w-full">
-            <TabsList className="w-full grid grid-cols-4">
+            <TabsList className="w-full grid grid-cols-5">
               <TabsTrigger value="rounds">Rundy</TabsTrigger>
               <TabsTrigger value="questions">Pytania</TabsTrigger>
               <TabsTrigger value="teams">Drużyny</TabsTrigger>
+              <TabsTrigger value="final">Finał</TabsTrigger>
               <TabsTrigger value="links">Linki</TabsTrigger>
             </TabsList>
 
             <TabsContent value="rounds" className="mt-4">
-              <Accordion type="multiple" defaultValue={["todo"]} className="w-full">
-                <AccordionItem value="todo">
-                  <AccordionTrigger>Rundy – editor</AccordionTrigger>
-                  <AccordionContent>
-                    <div className="opacity-70 text-sm">
-                     <TabsContent value="rounds" className="mt-4">
-                        <RoundsEditor gameId={gameId} />
-                      </TabsContent>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
+              <RoundsEditor gameId={gameId} />
             </TabsContent>
 
             <TabsContent value="questions" className="mt-4">
@@ -69,6 +65,13 @@ export default function BuilderPage() {
 
             <TabsContent value="teams" className="mt-4">
               <TeamsEditor gameId={gameId} />
+            </TabsContent>
+
+            <TabsContent value="final" className="mt-4">
+              <div className="grid gap-4">
+                <FinalQuestionsEditor gameId={gameId} />
+                <FinalPlayersEditor gameId={gameId} />
+              </div>
             </TabsContent>
 
             <TabsContent value="links" className="mt-4">
@@ -80,7 +83,9 @@ export default function BuilderPage() {
                   <div className="text-sm">
                     <div className="opacity-70">TV</div>
                     <div className="break-all">{tv}</div>
-                    <Button className="mt-2" variant="secondary" onClick={() => copy(tv)}>Kopiuj TV</Button>
+                    <Button className="mt-2" variant="secondary" onClick={() => copy(tv)}>
+                      Kopiuj TV
+                    </Button>
                   </div>
 
                   <Separator className="bg-white/10" />
@@ -88,7 +93,9 @@ export default function BuilderPage() {
                   <div className="text-sm">
                     <div className="opacity-70">Prowadzący</div>
                     <div className="break-all">{play}</div>
-                    <Button className="mt-2" variant="secondary" onClick={() => copy(play)}>Kopiuj prowadzącego</Button>
+                    <Button className="mt-2" variant="secondary" onClick={() => copy(play)}>
+                      Kopiuj prowadzącego
+                    </Button>
                   </div>
 
                   <Separator className="bg-white/10" />
@@ -96,7 +103,9 @@ export default function BuilderPage() {
                   <div className="text-sm">
                     <div className="opacity-70">Setup</div>
                     <div className="break-all">{setup}</div>
-                    <Button className="mt-2" variant="secondary" onClick={() => copy(setup)}>Kopiuj setup</Button>
+                    <Button className="mt-2" variant="secondary" onClick={() => copy(setup)}>
+                      Kopiuj setup
+                    </Button>
                   </div>
                 </CardContent>
               </Card>

@@ -166,6 +166,9 @@ export async function toggleReveal(gameId: string, idx: number) {
   const snap = await getDoc(ref);
   const revealed: number[] = (snap.data()?.revealedIdx ?? []) as number[];
 
+  if(!revealed.includes(idx)) await triggerSfx(gameId, "reveal");
+    
+
   const next = revealed.includes(idx)
     ? revealed.filter((x) => x !== idx)
     : Array.from(new Set([...revealed, idx]));

@@ -153,6 +153,19 @@ export function QuestionsEditor({ gameId }: { gameId: string }) {
     await batch.commit();
   }
 
+  if ((selectedRound?.type ?? "normal") === "final") {
+    return (
+      <Card className="border-white/10 bg-white/5">
+        <CardHeader>
+          <CardTitle>Pytania</CardTitle>
+        </CardHeader>
+        <CardContent className="opacity-70">
+          To jest runda finałowa. Pytania finałowe edytujesz w zakładce <b>Finał</b>.
+        </CardContent>
+      </Card>
+    );
+  }
+  
   return (
     <Card className="border-white/10 bg-white/5">
       <CardHeader className="flex flex-row items-center justify-between gap-3">

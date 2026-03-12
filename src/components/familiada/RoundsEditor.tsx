@@ -125,9 +125,9 @@ export function RoundsEditor({ gameId }: { gameId: string }) {
                 />
 
                 <div className="flex items-center gap-2">
-                  <div className="text-xs opacity-70 border-2 border-red-100 border-dashed">Mnożnik</div>
+                  <div className="text-xs opacity-70">Mnożnik</div>
                   <Input
-                    className="w-24 border-2 border-red-100 border-dashed"
+                    className="w-24"
                     inputMode="numeric"
                     value={newMultiplier}
                     onChange={(e) => setNewMultiplier(toNum(e.target.value, 1))}
@@ -264,7 +264,7 @@ function RoundRow({
 
           <div className="grid gap-1">
             <div className="text-xs opacity-70">Mnożnik</div>
-            <Input className="outline-2 outline-blue-500/100" inputMode="numeric" value={multiplier} onChange={(e) => setMultiplier(toNum(e.target.value, 1))} />
+            <Input inputMode="numeric" value={multiplier} onChange={(e) => setMultiplier(toNum(e.target.value, 1))} />
           </div>
         </div>
 

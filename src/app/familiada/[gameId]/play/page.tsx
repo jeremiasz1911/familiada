@@ -1,39 +1,44 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
-import { doc } from "firebase/firestore";
+import { useParams, useRouter } from "next/navigation";
 import {
+  collection,
+  doc,
+  increment,
+  orderBy,
+  query,
+  updateDoc,
+  writeBatch,
+} from "firebase/firestore";
+import {
+  ArrowLeft,
+  ArrowRight,
   Monitor,
-  ChevronLeft,
-  ChevronRight,
-  Layers,
-  HelpCircle,
+  Menu,
+  Volume2,
+  RotateCcw,
+  X,
+  Minus,
+  Plus,
+  HandCoins,
   Users,
   Shuffle,
   Timer as TimerIcon,
-  Award,
-  XCircle,
-  Play as PlayIcon,
-  Square,
-  RotateCcw,
-  PanelTop,
-  PanelBottom,
-  Volume2,
-  Sparkles,
-  Zap,
-  Trophy,
+  Trash2,
+  Undo2,
 } from "lucide-react";
 
 import { db } from "@/lib/firebase/client";
+
 import { useCollection, useDoc } from "@/lib/familiada/hooks";
 import {
   liveStateRef,
   roundsQuery,
   teamsQuery,
-  questionsQuery,
   setCurrentQuestion,
   clearReveals,
+  toggleReveal,
   awardPoints,
   addStrike,
   setActiveTeam,
@@ -44,116 +49,84 @@ import {
   triggerSfx,
   resetForNewRound,
   showRoundOverlay,
-  toggleReveal,
-  adjustTeamScore,
-  setTeamScore,
-  resetTeamScore,
-  resetAllTeamScores,
-  undoLastAward,
-  undoLastStrike
 } from "@/lib/familiada/service";
 
 import type { LiveStateDoc, RoundDoc, TeamDoc, QuestionDoc } from "@/lib/familiada/types";
-import { Timer } from "@/components/familiada/Timer";
-import { AnswerControlList } from "@/components/familiada/AnswerControlList";
 
-function toNum(x: any, fallback = 9999) {
+import { AnswerControlList } from "@/components/familiada/AnswerControlList";
+import { Timer } from "@/components/familiada/Timer";
+
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+
+function toNum(x: any, fallback = 0) {
   const n = typeof x === "number" ? x : Number(x);
   return Number.isFinite(n) ? n : fallback;
 }
 
 function IconBtn({
+  title,
   onClick,
   disabled,
-  title,
   children,
-  big,
-}: {
-  onClick?: () => void;
-  disabled?: boolean;
-  title?: string;
-  big?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      disabled={disabled}
-      onClick={onClick}
-      className={[
-        "grid place-items-center rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition active:scale-[0.98]",
-        "disabled:opacity-40 disabled:hover:bg-white/5",
-        big ? "h-12 w-12" : "h-10 w-10",
-      ].join(" ")}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Drawer({
-  title,
-  icon,
-  open,
-  onToggle,
-  right,
-  children,
+  variant = "secondary",
 }: {
   title: string;
-  icon: React.ReactNode;
-  open: boolean;
-  onToggle: () => void;
-  right?: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
   children: React.ReactNode;
+  variant?: "default" | "secondary" | "destructive";
 }) {
   return (
-    <section className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full px-4 py-3 flex items-center justify-between gap-3 hover:bg-white/5 transition"
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="opacity-80">{icon}</span>
-          <span className="font-semibold truncate">{title}</span>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {right}
-          {open ? <PanelBottom size={18} className="opacity-70" /> : <PanelTop size={18} className="opacity-70" />}
-        </div>
-      </button>
-
-      {open && <div className="px-4 pb-4">{children}</div>}
-    </section>
+    <Button
+      type="button"
+      title={title}
+      variant={variant}
+      size="icon"
+      disabled={disabled}
+      onClick={onClick}
+      className="h-11 w-11 rounded-2xl"
+    >
+      {children}
+    </Button>
   );
 }
 
 export default function PlayPage() {
   const params = useParams();
+  const router = useRouter();
   const gameId = params.gameId as string;
 
-  // --- LIVE
+  // LIVE
   const liveRef = useMemo(() => liveStateRef(gameId), [gameId]);
-  const { data: live, loading: liveLoading, error: liveError } = useDoc<LiveStateDoc>(liveRef);
+  const { data: live } = useDoc<LiveStateDoc>(liveRef);
 
-  // --- ROUNDS / TEAMS (raw)
+  // jeśli finał ON -> kontrola finału
+  useEffect(() => {
+    if (!live) return;
+    if ((live as any)?.final?.enabled) {
+      router.replace(`/familiada/${gameId}/final/play`);
+    }
+  }, [live, (live as any)?.final?.enabled, router, gameId]);
+
+  // ROUNDS / TEAMS
   const rq = useMemo(() => roundsQuery(gameId), [gameId]);
   const { data: roundsRaw } = useCollection<RoundDoc>(rq);
+  const rounds = useMemo(
+    () => [...roundsRaw].sort((a: any, b: any) => toNum(a.index) - toNum(b.index)),
+    [roundsRaw]
+  );
 
   const tq = useMemo(() => teamsQuery(gameId), [gameId]);
   const { data: teamsRaw } = useCollection<TeamDoc>(tq);
+  const teams = useMemo(() => [...teamsRaw], [teamsRaw]);
 
-  // --- SORTED
-  const rounds = useMemo(() => {
-    return [...roundsRaw].sort((a: any, b: any) => toNum(a.index) - toNum(b.index));
-  }, [roundsRaw]);
-
-  const teams = useMemo(() => {
-    // teams nie muszą być sortowane, ale stabilnie:
-    return [...teamsRaw];
-  }, [teamsRaw]);
-
+  // current round + indices
   const currentRoundIndex = useMemo(() => {
     if (!live?.currentRoundId) return -1;
     return rounds.findIndex((r) => r.id === live.currentRoundId);
@@ -161,124 +134,111 @@ export default function PlayPage() {
 
   const currentRound = currentRoundIndex >= 0 ? rounds[currentRoundIndex] : null;
 
-  // --- QUESTIONS for current round
-  const qq = useMemo(
-    () => (live?.currentRoundId ? questionsQuery(gameId, live.currentRoundId) : null),
-    [gameId, live?.currentRoundId]
-  );
-  const { data: questionsRaw } = useCollection<QuestionDoc>(qq);
+  // questions query for current round
+  const questionsQ = useMemo(() => {
+    if (!live?.currentRoundId) return null;
+    return query(
+      collection(db, "familiadaGames", gameId, "rounds", live.currentRoundId, "questions"),
+      orderBy("index", "asc")
+    );
+  }, [gameId, live?.currentRoundId]);
 
-  const questions = useMemo(() => {
-    return [...questionsRaw].sort((a: any, b: any) => toNum(a.index) - toNum(b.index));
-  }, [questionsRaw]);
-  
-  const questionsKey = useMemo(() => questions.map((q) => q.id).join("|"), [questions]);
-  const firstQId = questions[0]?.id ?? null;
+  const { data: questionsRaw } = useCollection<QuestionDoc>(questionsQ as any);
+  const questions = useMemo(
+    () => [...questionsRaw].sort((a: any, b: any) => toNum(a.index) - toNum(b.index)),
+    [questionsRaw]
+  );
 
   const currentQuestionIndex = useMemo(() => {
     if (!live?.currentQuestionId) return -1;
     return questions.findIndex((q) => q.id === live.currentQuestionId);
   }, [questions, live?.currentQuestionId]);
 
-  // --- CURRENT QUESTION DOC (correct path!)
+  // current question doc (no conditional hooks)
   const questionRef = useMemo(() => {
     if (!live?.currentRoundId || !live?.currentQuestionId) return null;
-    return doc(
-      db,
-      "familiadaGames",
-      gameId,
-      "rounds", // <-- ważne: "rounds"
-      live.currentRoundId,
-      "questions",
-      live.currentQuestionId
-    );
+    return doc(db, "familiadaGames", gameId, "rounds", live.currentRoundId, "questions", live.currentQuestionId);
   }, [gameId, live?.currentRoundId, live?.currentQuestionId]);
 
-  const { data: currentQuestion } = useDoc<QuestionDoc>(questionRef);
+  const { data: currentQuestion } = useDoc<QuestionDoc>(questionRef as any);
 
-  const [manualScore, setManualScore] = useState<string>("");
-
-  // --- auto set first round if none
+  // init round if empty
   useEffect(() => {
     if (!live) return;
     if (live.currentRoundId) return;
-    if (rounds.length === 0) return;
+    if (!rounds.length) return;
     setCurrentQuestion(gameId, rounds[0].id, "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameId, live?.currentRoundId, rounds.length]);
+  }, [live?.currentRoundId, rounds.length, gameId]);
 
-  // --- auto set first question when entering a round
+  // init first question in round
   useEffect(() => {
     if (!live?.currentRoundId) return;
+    if (!questions.length) return;
+    const firstQId = questions[0]?.id ?? null;
     if (!firstQId) return;
 
-    const ok =
-      !!live.currentQuestionId && questions.some((q) => q.id === live.currentQuestionId);
-
-    if (!ok) {
-      setCurrentQuestion(gameId, live.currentRoundId, firstQId);
-    }
+    const ok = !!live.currentQuestionId && questions.some((q) => q.id === live.currentQuestionId);
+    if (!ok) setCurrentQuestion(gameId, live.currentRoundId, firstQId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameId, live?.currentRoundId, live?.currentQuestionId, firstQId, questionsKey]);
+  }, [gameId, live?.currentRoundId, questions.length, live?.currentQuestionId]);
 
-  // --- scoring
-  const revealed = live?.revealedIdx ?? [];
-  const multiplier = currentRound?.multiplier ?? 1;
+  // ACTIVE / SELECTED
+  const strikesByTeam = (live as any)?.strikesByTeam ?? {};
+  const activeTeamId = (live as any)?.activeTeamId ?? teams[0]?.id ?? null;
+  const activeTeam = teams.find((t) => t.id === activeTeamId) ?? null;
+
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!selectedTeamId && teams[0]?.id) setSelectedTeamId(teams[0].id);
+  }, [selectedTeamId, teams]);
+
+  const selectedTeam = teams.find((t) => t.id === selectedTeamId) ?? null;
+
+  const activeStrikes = activeTeamId ? (strikesByTeam[activeTeamId] ?? 0) : 0;
+
+  // STEAL
+  const stealEnabled = !!(live as any)?.steal?.enabled;
+  const stealTeamId = (live as any)?.steal?.teamId ?? null;
+  const stealTeam = teams.find((t) => t.id === stealTeamId) ?? null;
+
+  // revealed / bank
+  const revealedIdx = (live as any)?.revealedIdx ?? [];
+  const multiplier = (currentRound as any)?.multiplier ?? 1;
 
   const baseSum =
     (currentQuestion?.answers ?? [])
-      .map((a, idx) => (revealed.includes(idx) ? a.points : 0))
+      .map((a, idx) => (revealedIdx.includes(idx) ? a.points : 0))
       .reduce((a, b) => a + b, 0);
 
   const bank = baseSum * multiplier;
 
-  // --- timer
-  const startedAtMs = live?.timer?.startedAt?.toMillis ? live.timer.startedAt.toMillis() : null;
+  // timer (ukryty w menu)
+  const timerEnabled = !!(live as any)?.timerEnabled;
+  const startedAtMs = (live as any)?.timer?.startedAt?.toMillis ? (live as any).timer.startedAt.toMillis() : null;
 
-  // --- teams state
-  const activeTeamId = live?.activeTeamId ?? (teams[0]?.id ?? null);
-  const activeTeam = teams.find((t) => t.id === activeTeamId) ?? null;
+  // ---------- QUICK NAV ----------
+  const prevRoundId = currentRoundIndex > 0 ? rounds[currentRoundIndex - 1].id : null;
+  const nextRoundId = currentRoundIndex >= 0 && currentRoundIndex < rounds.length - 1 ? rounds[currentRoundIndex + 1].id : null;
 
-  const stealEnabled = live?.steal?.enabled ?? false;
-  const stealTeamId = live?.steal?.teamId ?? null;
-  const stealTeam = teams.find((t) => t.id === stealTeamId) ?? null;
+  const prevQId = currentQuestionIndex > 0 ? questions[currentQuestionIndex - 1].id : null;
+  const nextQId = currentQuestionIndex >= 0 && currentQuestionIndex < questions.length - 1 ? questions[currentQuestionIndex + 1].id : null;
 
-  // --- UI (domyślnie zwinięte)
-  const [openBoard, setOpenBoard] = useState(false);
-  const [openTeams, setOpenTeams] = useState(false);
-  const [openSteal, setOpenSteal] = useState(false);
-  const [openTime, setOpenTime] = useState(false);
-  const [openSfx, setOpenSfx] = useState(false);
-
-  const [bankFlash, setBankFlash] = useState(false);
-
-  if (liveError) {
-    return (
-      <main className="p-6 max-w-3xl mx-auto">
-        <h1 className="text-2xl font-black">Błąd</h1>
-        <p className="mt-2 opacity-70">{String(liveError.message ?? liveError)}</p>
-      </main>
-    );
-  }
-
-  // --- navigation helpers
-  const canPrevRound = currentRoundIndex > 0;
-  const canNextRound = currentRoundIndex >= 0 && currentRoundIndex < rounds.length - 1;
-  const prevRoundId = canPrevRound ? rounds[currentRoundIndex - 1].id : null;
-  const nextRoundId = canNextRound ? rounds[currentRoundIndex + 1].id : null;
-
-  const canPrevQ = currentQuestionIndex > 0;
-  const canNextQ = currentQuestionIndex >= 0 && currentQuestionIndex < questions.length - 1;
-  const prevQId = canPrevQ ? questions[currentQuestionIndex - 1].id : null;
-  const nextQId = canNextQ ? questions[currentQuestionIndex + 1].id : null;
-
+  // ---------- actions ----------
   async function goToRound(roundId: string) {
-    // reset X/steal/timer/odkrycia przy zmianie rundy
-    await resetForNewRound(gameId);
+    const r = rounds.find((x) => x.id === roundId);
 
-    await setCurrentQuestion(gameId, roundId, ""); // pytanie ustawi efekt auto
-    const title = (rounds.find((r) => r.id === roundId)?.title ?? "RUNDA").toUpperCase();
-    await showRoundOverlay(gameId, title, 2500);
+    // jeśli runda finalowa -> tylko flip switch (screen przełączy się sam)
+    if ((r as any)?.type === "final") {
+      await updateDoc(liveStateRef(gameId), { "final.enabled": true } as any);
+      router.replace(`/familiada/${gameId}/final/play`);
+      return;
+    }
+
+    await resetForNewRound(gameId);
+    await setCurrentQuestion(gameId, roundId, "");
+    await clearReveals(gameId);
+    await showRoundOverlay(gameId, ((r as any)?.title ?? "RUNDA").toUpperCase(), 900);
     await triggerSfx(gameId, "intro");
   }
 
@@ -288,414 +248,559 @@ export default function PlayPage() {
     await clearReveals(gameId);
   }
 
-  async function finishGame() {
+  async function bankToActive() {
+    if (!activeTeamId || !bank) return;
+    await awardPoints(gameId, activeTeamId, bank);
     await triggerSfx(gameId, "win");
-    const text = `GRATULACJE!`;
-    await showRoundOverlay(gameId, text, 4500);
   }
 
-  async function advanceAfterBank() {
-    // next question
-    if (currentQuestionIndex >= 0 && currentQuestionIndex < questions.length - 1) {
-      await goToQuestion(questions[currentQuestionIndex + 1].id);
-      return;
-    }
-    // next round
-    if (currentRoundIndex >= 0 && currentRoundIndex < rounds.length - 1) {
-      await goToRound(rounds[currentRoundIndex + 1].id);
-      return;
-    }
-    // end
-    await finishGame();
+  async function addX() {
+    if (!activeTeamId) return;
+    await addStrike(gameId, activeTeamId);
+    await triggerSfx(gameId, "wrong");
   }
+
+  // ✅ cofnij X (minus 1) dla aktywnej drużyny
+  async function undoX() {
+    if (!activeTeamId) return;
+    const cur = Number(strikesByTeam?.[activeTeamId] ?? 0);
+    const next = Math.max(0, cur - 1);
+    await updateDoc(liveStateRef(gameId), { [`strikesByTeam.${activeTeamId}`]: next } as any);
+  }
+
+  async function resetRevealsOnly() {
+    await clearReveals(gameId);
+  }
+
+  async function startSteal(teamId: string) {
+    await setSteal(gameId, true, teamId);
+  }
+  async function stealSuccess() {
+    if (!stealTeamId || !bank) return;
+    await awardPoints(gameId, stealTeamId, bank);
+    await triggerSfx(gameId, "win");
+    await setSteal(gameId, false, null);
+    await clearReveals(gameId);
+  }
+  async function stealFail() {
+    if (!stealTeamId) return;
+    const cur = Number(strikesByTeam?.[stealTeamId] ?? 0);
+    await updateDoc(liveStateRef(gameId), { [`strikesByTeam.${stealTeamId}`]: cur + 1 } as any);
+    await triggerSfx(gameId, "wrong");
+    await setSteal(gameId, false, null);
+    await clearReveals(gameId);
+  }
+
+  async function resetBoardSoft() {
+    await clearReveals(gameId);
+    await setSteal(gameId, false, null);
+    await updateDoc(liveStateRef(gameId), { strikesByTeam: {} } as any);
+  }
+
+  // ---------- manual scoring + undo ----------
+  const [setScoreValue, setSetScoreValue] = useState<string>("0");
+  const [deltaValue, setDeltaValue] = useState<string>("10");
+  const [lastScoreUndo, setLastScoreUndo] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    if (selectedTeam?.score != null) setSetScoreValue(String(selectedTeam.score ?? 0));
+  }, [selectedTeamId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function setTeamScore(teamId: string, score: number) {
+    const prev = teams.find((t) => t.id === teamId)?.score ?? 0;
+    setLastScoreUndo((m) => ({ ...m, [teamId]: prev }));
+    await updateDoc(doc(db, "familiadaGames", gameId, "teams", teamId), {
+      score: Math.max(0, Number(score) || 0),
+    });
+  }
+
+  async function addTeamScore(teamId: string, delta: number) {
+    const prev = teams.find((t) => t.id === teamId)?.score ?? 0;
+    setLastScoreUndo((m) => ({ ...m, [teamId]: prev }));
+    await updateDoc(doc(db, "familiadaGames", gameId, "teams", teamId), {
+      score: increment(Number(delta) || 0),
+    });
+  }
+
+  async function undoScore(teamId: string) {
+    const prev = lastScoreUndo[teamId];
+    if (prev === undefined) return;
+    await updateDoc(doc(db, "familiadaGames", gameId, "teams", teamId), { score: prev });
+  }
+
+  async function hardResetGame() {
+    const batch = writeBatch(db);
+
+    for (const t of teams) {
+      batch.update(doc(db, "familiadaGames", gameId, "teams", t.id), { score: 0 });
+    }
+
+    batch.update(liveStateRef(gameId), {
+      revealedIdx: [],
+      strikesByTeam: {},
+      activeTeamId: teams[0]?.id ?? null,
+      steal: { enabled: false, teamId: null },
+      timerEnabled: false,
+      timer: { running: false, startedAt: null, durationSec: 20 },
+      final: { enabled: false },
+    } as any);
+
+    await batch.commit();
+    await triggerSfx(gameId, "intro");
+  }
+
+  // ---------- UI ----------
+  const roundLabel = currentRound ? `R${(currentRound as any).index + 1}` : "R—";
+  const qLabel = currentQuestionIndex >= 0 ? `Q${currentQuestionIndex + 1}` : "Q—";
 
   return (
-    <main className="p-4 md:p-6 max-w-6xl mx-auto">
-      {/* TOP STRIP (bez tytułu “Kontrola…”) */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-xs opacity-70">Aktywna drużyna</div>
-          <div className="text-xl font-black truncate">{activeTeam?.name ?? "—"}</div>
-
-          <div
-            className={[
-              "mt-2 inline-flex items-center gap-2 rounded-2xl border px-3 py-2",
-              bankFlash
-                ? "border-amber-200/40 bg-amber-200/15 shadow-[0_0_70px_rgba(255,210,80,0.25)] animate-pulse ring-2 ring-amber-200/30"
-                : "border-white/10 bg-white/5",
-            ].join(" ")}
-          >
-            <span className="text-[10px] opacity-70">BANK</span>
-            <span className="text-2xl font-black tabular-nums text-amber-200">{bank}</span>
-            <span className="text-[10px] opacity-60">(bazowo {baseSum} × x{multiplier})</span>
-          </div>
-
-          <div className="text-[10px] opacity-60 mt-1">
-            Rundy: {rounds.length} • Pytania w rundzie: {questions.length}
-            {liveLoading ? " • ładuje…" : ""}
+    <main className="p-3 md:p-6 max-w-4xl mx-auto">
+      {/* Compact top bar (minimal text) */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Badge variant="secondary" className="rounded-xl">{roundLabel}</Badge>
+          <Badge variant="secondary" className="rounded-xl">{qLabel}</Badge>
+          <div className="truncate text-sm opacity-80">
+            {currentQuestion?.text ?? "—"}
           </div>
         </div>
 
-        <button
-          className="rounded-xl border px-3 py-2 hover:bg-white/5 transition flex items-center gap-2 shrink-0"
-          onClick={() => window.open(`/familiada/${gameId}/screen`, "_blank", "noopener,noreferrer")}
-        >
-          <Monitor size={18} />
-          TV
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <IconBtn title="TV (/screen)" onClick={() => window.open(`/familiada/${gameId}/screen`, "_blank", "noopener,noreferrer")}>
+            <Monitor size={18} />
+          </IconBtn>
+
+          <IconBtn title="SFX Intro" onClick={() => triggerSfx(gameId, "intro")}>
+            <Volume2 size={18} />
+          </IconBtn>
+
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="secondary" size="icon" className="h-11 w-11 rounded-2xl" title="Menu">
+                <Menu size={18} />
+              </Button>
+            </DialogTrigger>
+
+            <DialogContent className="max-w-[95vw] sm:max-w-xl">
+              <DialogHeader>
+                <DialogTitle>Menu prowadzącego</DialogTitle>
+              </DialogHeader>
+
+              <Accordion type="multiple" defaultValue={["teams"]} className="space-y-3">
+                {/* NAV */}
+                <AccordionItem value="nav" className="border border-white/10 rounded-2xl px-3">
+                  <AccordionTrigger>Nawigacja (rundy / pytania)</AccordionTrigger>
+                  <AccordionContent className="pb-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm opacity-70 truncate">
+                        Runda: <b>{(currentRound as any)?.title ?? "—"}</b>
+                      </div>
+                      <div className="flex gap-2">
+                        <IconBtn title="Poprzednia runda" onClick={() => prevRoundId && goToRound(prevRoundId)} disabled={!prevRoundId}>
+                          <ArrowLeft size={18} />
+                        </IconBtn>
+                        <IconBtn title="Następna runda" onClick={() => nextRoundId && goToRound(nextRoundId)} disabled={!nextRoundId}>
+                          <ArrowRight size={18} />
+                        </IconBtn>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {rounds.map((r) => (
+                        <Button
+                          key={r.id}
+                          size="sm"
+                          variant={r.id === live?.currentRoundId ? "default" : "secondary"}
+                          onClick={() => goToRound(r.id)}
+                          className="rounded-2xl"
+                        >
+                          {(r as any).index + 1}
+                        </Button>
+                      ))}
+                    </div>
+
+                    <Separator className="bg-white/10" />
+
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm opacity-70 truncate">Pytanie: <b>{currentQuestion?.text ?? "—"}</b></div>
+                      <div className="flex gap-2">
+                        <IconBtn title="Poprzednie pytanie" onClick={() => prevQId && goToQuestion(prevQId)} disabled={!prevQId}>
+                          <ArrowLeft size={18} />
+                        </IconBtn>
+                        <IconBtn title="Następne pytanie" onClick={() => nextQId && goToQuestion(nextQId)} disabled={!nextQId}>
+                          <ArrowRight size={18} />
+                        </IconBtn>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {questions.map((q, idx) => (
+                        <Button
+                          key={q.id}
+                          size="sm"
+                          variant={q.id === live?.currentQuestionId ? "default" : "secondary"}
+                          onClick={() => goToQuestion(q.id)}
+                          className="rounded-2xl"
+                        >
+                          {idx + 1}
+                        </Button>
+                      ))}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+
+                {/* TEAMS + MANUAL SCORE */}
+                <AccordionItem value="teams" className="border border-white/10 rounded-2xl px-3">
+                  <AccordionTrigger>Drużyny + punkty</AccordionTrigger>
+                  <AccordionContent className="pb-4 space-y-3">
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <Badge className="bg-amber-200 text-black rounded-xl">
+                        ACTIVE: {activeTeam?.name ?? "—"} (X:{activeStrikes})
+                      </Badge>
+                      <Badge variant="secondary" className="rounded-xl">
+                        SELECTED: {selectedTeam?.name ?? "—"}
+                      </Badge>
+                      <Badge variant="secondary" className="rounded-xl">
+                        BANK: {bank}
+                      </Badge>
+                    </div>
+
+                    <div className="grid gap-2">
+                      {teams
+                        .slice()
+                        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+                        .map((t) => {
+                          const isActive = t.id === activeTeamId;
+                          const isSel = t.id === selectedTeamId;
+                          return (
+                            <div key={t.id} className={["rounded-2xl border p-3 bg-black/20", isActive ? "border-amber-200/35" : "border-white/10"].join(" ")}>
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="font-semibold truncate">
+                                    {t.name}
+                                    {isActive && <span className="ml-2 text-amber-200">●</span>}
+                                    {isSel && !isActive && <span className="ml-2 opacity-60">●</span>}
+                                  </div>
+                                  <div className="text-xs opacity-70">X: {strikesByTeam?.[t.id] ?? 0}</div>
+                                </div>
+                                <div className="text-2xl font-black tabular-nums text-amber-200">{t.score ?? 0}</div>
+                              </div>
+
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <Button size="sm" variant="secondary" onClick={() => setSelectedTeamId(t.id)} className="rounded-2xl">
+                                  Select
+                                </Button>
+                                <Button size="sm" onClick={() => setActiveTeam(gameId, t.id)} className="rounded-2xl">
+                                  Active
+                                </Button>
+                                <Button size="sm" variant="secondary" onClick={() => bank && awardPoints(gameId, t.id, bank)} disabled={!bank} className="rounded-2xl">
+                                  Bank→
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => undoScore(t.id)}
+                                  disabled={lastScoreUndo[t.id] === undefined}
+                                  className="rounded-2xl"
+                                  title="Cofnij ostatnią zmianę punktów tej drużyny"
+                                >
+                                  <Undo2 className="mr-2 h-4 w-4" /> Undo
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+
+                    <Separator className="bg-white/10" />
+
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Users size={18} className="opacity-70" />
+                        <div className="font-semibold truncate">
+                          Ręczna korekta: <span className="text-amber-200">{selectedTeam?.name ?? "—"}</span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-2">
+                          <div className="text-xs opacity-70">SET</div>
+                          <Input value={setScoreValue} onChange={(e) => setSetScoreValue(e.target.value)} inputMode="numeric" />
+                          <Button className="w-full rounded-2xl" onClick={() => selectedTeamId && setTeamScore(selectedTeamId, Number(setScoreValue))} disabled={!selectedTeamId}>
+                            Ustaw
+                          </Button>
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="text-xs opacity-70">Δ</div>
+                          <Input value={deltaValue} onChange={(e) => setDeltaValue(e.target.value)} inputMode="numeric" />
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button className="rounded-2xl" variant="secondary" onClick={() => selectedTeamId && addTeamScore(selectedTeamId, Number(deltaValue))} disabled={!selectedTeamId}>
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                            <Button className="rounded-2xl" variant="secondary" onClick={() => selectedTeamId && addTeamScore(selectedTeamId, -Number(deltaValue))} disabled={!selectedTeamId}>
+                              <Minus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+
+                {/* STEAL */}
+                <AccordionItem value="steal" className="border border-white/10 rounded-2xl px-3">
+                  <AccordionTrigger>Przejęcie (STEAL)</AccordionTrigger>
+                  <AccordionContent className="pb-4 space-y-3">
+                    {!stealEnabled ? (
+                      <div className="space-y-2">
+                        <div className="text-sm opacity-70">Wybierz drużynę, która przejmuje BANK.</div>
+                        <div className="flex flex-wrap gap-2">
+                          {teams.filter((t) => t.id !== activeTeamId).map((t) => (
+                            <Button key={t.id} variant="secondary" className="rounded-2xl" onClick={() => startSteal(t.id)}>
+                              <Shuffle className="mr-2 h-4 w-4" /> {t.name}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <Badge className="bg-amber-200 text-black rounded-xl">
+                          STEAL: {stealTeam?.name ?? "—"} • BANK: {bank}
+                        </Badge>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button className="rounded-2xl bg-amber-200 text-black hover:bg-amber-200/90" onClick={stealSuccess} disabled={!stealTeamId || !bank}>
+                            DOBRZE
+                          </Button>
+                          <Button className="rounded-2xl" variant="secondary" onClick={stealFail} disabled={!stealTeamId}>
+                            ŹLE
+                          </Button>
+                        </div>
+
+                        <Button className="rounded-2xl" variant="secondary" onClick={() => setSteal(gameId, false, null)}>
+                          Anuluj
+                        </Button>
+                      </div>
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+                    
+                {/* TIMER + SFX + RESET */}
+                <AccordionItem value="tools" className="border border-white/10 rounded-2xl px-3">
+                  <AccordionTrigger>Narzędzia (timer / reset / sfx)</AccordionTrigger>
+                  <AccordionContent className="pb-4 space-y-3">
+                    <div className="rounded-2xl border border-white/10 bg-black/20 p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <TimerIcon size={18} className="opacity-70" />
+                        <div className="font-semibold">Timer</div>
+                      </div>
+
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={timerEnabled} onChange={(e) => setTimerEnabled(gameId, e.target.checked)} />
+                        Pokazuj na TV
+                      </label>
+
+                      <div className="flex items-center justify-between gap-2">
+                        <Timer running={!!(live as any)?.timer?.running} startedAtMs={startedAtMs} durationSec={(live as any)?.timer?.durationSec ?? 20} />
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="secondary" className="rounded-2xl" onClick={() => startTimer(gameId, 20)}>Start</Button>
+                          <Button size="sm" variant="secondary" className="rounded-2xl" onClick={() => stopTimer(gameId)}>Stop</Button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button variant="secondary" className="rounded-2xl" onClick={() => triggerSfx(gameId, "reveal")}>
+                        <Volume2 className="mr-2 h-4 w-4" /> Reveal
+                      </Button>
+                      <Button variant="secondary" className="rounded-2xl" onClick={() => triggerSfx(gameId, "wrong")}>
+                        <X className="mr-2 h-4 w-4" /> Wrong
+                      </Button>
+                      <Button variant="secondary" className="rounded-2xl" onClick={() => triggerSfx(gameId, "win")}>
+                        <HandCoins className="mr-2 h-4 w-4" /> Win
+                      </Button>
+                      <Button variant="secondary" className="rounded-2xl" onClick={() => triggerSfx(gameId, "intro")}>
+                        <Volume2 className="mr-2 h-4 w-4" /> Intro
+                      </Button>
+                    </div>
+
+                    <Separator className="bg-white/10" />
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button variant="secondary" className="rounded-2xl" onClick={resetBoardSoft}>
+                        <RotateCcw className="mr-2 h-4 w-4" /> Reset tablicy
+                      </Button>
+                      <Button variant="secondary" className="rounded-2xl" onClick={resetRevealsOnly}>
+                        Reset odkryć
+                      </Button>
+                    </div>
+
+                    <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-3 space-y-2">
+                      <div className="font-semibold flex items-center gap-2">
+                        <Trash2 size={18} /> HARD RESET
+                      </div>
+                      <div className="text-sm opacity-80">
+                        Zeruje punkty, X, steal, odkrycia i <b>wyłącza finał</b> (TV wraca do rund).
+                      </div>
+                      <Button className="rounded-2xl bg-red-500/80 hover:bg-red-500 text-white" onClick={hardResetGame}>
+                        HARD RESET
+                      </Button>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
-      {/* ALWAYS VISIBLE NAV (strzałki nie znikają) */}
-      <section className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="grid gap-3">
-          {/* Round row */}
-          <div className="rounded-2xl border border-white/10 bg-black/10 p-3 overflow-hidden">
+      {/* MAIN: answers + bottom action bar */}
+      <div className="mt-3 space-y-3">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+
+
             <div className="flex items-center justify-between gap-2">
-              <div className="text-sm font-semibold flex items-center gap-2">
-                <Layers size={16} className="opacity-70" /> Runda
+              <div className="text-sm opacity-70 truncate">
+                Runda: <b>{(currentRound as any)?.title ?? "—"}</b>
               </div>
-              <div className="text-xs opacity-70">x{multiplier}</div>
+              <div className="flex gap-2">
+                <IconBtn title="Poprzednia runda" onClick={() => prevRoundId && goToRound(prevRoundId)} disabled={!prevRoundId}>
+                  <ArrowLeft size={18} />
+                </IconBtn>
+                <IconBtn title="Następna runda" onClick={() => nextRoundId && goToRound(nextRoundId)} disabled={!nextRoundId}>
+                  <ArrowRight size={18} />
+                </IconBtn>
+              </div>
             </div>
 
-            <div className="mt-2 grid grid-cols-[48px_1fr_48px] gap-2 items-center">
-              <IconBtn
-                big
-                disabled={!canPrevRound}
-                title="Poprzednia runda"
-                onClick={() => prevRoundId && goToRound(prevRoundId)}
-              >
-                <ChevronLeft />
-              </IconBtn>
+            <div className="flex flex-wrap gap-2">
+              {rounds.map((r) => (
+                <Button
+                  key={r.id}
+                  size="sm"
+                  variant={r.id === live?.currentRoundId ? "default" : "secondary"}
+                  onClick={() => goToRound(r.id)}
+                  className="rounded-2xl"
+                >
+                  {(r as any).index + 1}
+                </Button>
+              ))}
+            </div>
 
-              <div className="min-w-0 rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
-                <div className="text-xs opacity-70">
-                  {currentRoundIndex >= 0 ? `${currentRoundIndex + 1}/${rounds.length}` : `—/${rounds.length}`}
-                </div>
-                <div className="font-black truncate">{currentRound?.title ?? "—"}</div>
+            <Separator className="bg-white/10" />
+
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm opacity-70 truncate">Pytanie: <b>{currentQuestion?.text ?? "—"}</b></div>
+              <div className="flex gap-2">
+                <IconBtn title="Poprzednie pytanie" onClick={() => prevQId && goToQuestion(prevQId)} disabled={!prevQId}>
+                  <ArrowLeft size={18} />
+                </IconBtn>
+                <IconBtn title="Następne pytanie" onClick={() => nextQId && goToQuestion(nextQId)} disabled={!nextQId}>
+                  <ArrowRight size={18} />
+                </IconBtn>
               </div>
+            </div>
 
-              <IconBtn
-                big
-                disabled={!canNextRound}
-                title="Następna runda"
-                onClick={() => nextRoundId && goToRound(nextRoundId)}
-              >
-                <ChevronRight />
-              </IconBtn>
+       
+
+          <div className="flex ">
+
+            <div className="flex items-center gap-2">
+              <div className="gap-2 justify-between w-100 items-center bg ">
+                {teams
+                  .slice()
+                  .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+                  .map((t) => {
+                    const isActive = t.id === activeTeamId;
+                    const isSel = t.id === selectedTeamId;
+                    return (
+                      <Badge
+                        key={t.id}
+                      
+                        onClick={() => setActiveTeam(gameId,t.id)}
+                        className={[
+                          "rounded-2xl border bg-sky-950 p-3 text-left transition active:scale-[0.99]",
+                          "bg-white/5 hover:bg-white/10 bg-gray-300 hover:bg-gray-400/30 cursor-pointer",
+                          isActive ? "border-amber-200/50 shadow-[0_0_45px_rgba(255,210,80,0.16)]" : "border-white/10",
+                        ].join(" ")}
+                      >
+                        <div className="flex items-center justify-between gap-2 ">
+                          <div className="min-w-0">
+                            <div className="font-semibold truncate ">
+                              {t.name}
+                              {isActive && <span className="ml-2 text-amber-200">●</span>}
+                              {isSel && !isActive && <span className="ml-2 opacity-60">●</span>}
+                            </div>
+                            
+                          </div>
+                          <div className="text-2xl font-black tabular-nums text-amber-200">
+                            {t.score ?? 0}
+                          </div>
+                        </div>
+                      </Badge>
+                    );
+                  })}
+              </div>
+              <Badge className="bg-amber-200 text-black rounded-xl ">
+                BANK {bank}
+              </Badge>
             </div>
           </div>
 
-          {/* Question row */}
-          <div className="rounded-2xl border border-white/10 bg-black/10 p-3 overflow-hidden">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-sm font-semibold flex items-center gap-2">
-                <HelpCircle size={16} className="opacity-70" /> Pytanie
-              </div>
-              <div className="text-xs opacity-70">
-                {currentQuestionIndex >= 0 ? `${currentQuestionIndex + 1}/${questions.length}` : `—/${questions.length}`}
-              </div>
-            </div>
+          <Separator className="my-3 bg-white/10" />
 
-            <div className="mt-2 grid grid-cols-[44px_1fr_44px] gap-2 items-center">
-              <IconBtn disabled={!canPrevQ} title="Poprzednie pytanie" onClick={() => prevQId && goToQuestion(prevQId)}>
-                <ChevronLeft size={18} />
-              </IconBtn>
-
-              <div className="min-w-0 rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
-                <div className="font-black truncate">{currentQuestion?.text ?? "—"}</div>
-              </div>
-
-              <IconBtn disabled={!canNextQ} title="Następne pytanie" onClick={() => nextQId && goToQuestion(nextQId)}>
-                <ChevronRight size={18} />
-              </IconBtn>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* MAIN */}
-      <div className="mt-4 grid lg:grid-cols-3 gap-4">
-        {/* LEFT: Board */}
-        <div className="lg:col-span-2 grid gap-4">
-          <Drawer
-            title="Tablica (odkrywanie)"
-            icon={<HelpCircle size={18} />}
-            open={openBoard}
-            onToggle={() => setOpenBoard((v) => !v)}
-            right={<span className="text-xs opacity-70">{currentQuestion?.answers?.length ?? 0} odp.</span>}
-          >
-            <AnswerControlList
-              answers={currentQuestion?.answers ?? []}
-              revealedIdx={revealed}
-              onToggle={async (idx) => {
-                const was = revealed.includes(idx);
-                await toggleReveal(gameId, idx);
-                if (!was) await triggerSfx(gameId, "reveal");
-              }}
-            />
-          </Drawer>
+          <AnswerControlList
+            answers={currentQuestion?.answers ?? []}
+            revealedIdx={revealedIdx}
+            onToggle={(idx) => toggleReveal(gameId, idx)}
+          />
         </div>
 
-        {/* RIGHT: Teams / Steal / Time / SFX */}
-        <div className="grid gap-4">
-          <Drawer
-            title="Drużyny"
-            icon={<Users size={18} />}
-            open={openTeams}
-            onToggle={() => setOpenTeams((v) => !v)}
-            right={<span className="text-xs opacity-70">{teams.length}</span>}
-          >
-            <div className="flex gap-2 overflow-auto pb-1">
-              {teams.map((t) => {
-                const on = t.id === activeTeamId;
-                return (
-                  <button
-                    key={t.id}
-                    className={[
-                      "shrink-0 rounded-2xl border px-3 py-2 text-sm font-semibold transition",
-                      on ? "bg-amber-200 text-black border-amber-200" : "bg-white/5 border-white/10 hover:bg-white/10",
-                    ].join(" ")}
-                    onClick={() => setActiveTeam(gameId, t.id)}
-                  >
-                    {t.name} <span className="opacity-70 tabular-nums">{t.score ?? 0}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button
-                className="rounded-2xl bg-white text-black px-3 py-3 font-black flex items-center justify-center gap-2"
-                onClick={async () => {
-                  if (!activeTeamId) return;
-
-                  setBankFlash(true);
-                  setTimeout(() => setBankFlash(false), 650);
-
-                  await awardPoints(gameId, activeTeamId, bank);
-                  await clearReveals(gameId);
-
-                  // await triggerSfx(gameId, "win");
-
-                  await advanceAfterBank();
-                }}
-              >
-                <Award size={28} /> Daj punkty drużynie
-              </button>
-
-              <button
-                className="rounded-2xl border px-3 py-3 font-black flex items-center justify-center gap-2 hover:bg-white/5 transition"
-                onClick={async () => {
-                  if (!activeTeamId) return;
-                  await addStrike(gameId, activeTeamId);
-                  await triggerSfx(gameId, "wrong");
-                }}
-              >
-                <XCircle size={18} /> X
-              </button>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button
-                className="rounded-2xl border px-3 py-2 hover:bg-white/5 transition"
-                onClick={() => undoLastAward(gameId)}
-                title="Cofnij ostatnie przyznanie banku"
-              >
-                UNDO Bank
-              </button>
-
-              <button
-                className="rounded-2xl border px-3 py-2 hover:bg-white/5 transition"
-                onClick={() => undoLastStrike(gameId)}
-                title="Cofnij ostatni błąd (X)"
-              >
-                UNDO X
-              </button>
-            </div>
-
-            <div className="mt-3 grid grid-cols-4 gap-2">
-              <button className="rounded-xl border px-2 py-2" onClick={() => activeTeamId && adjustTeamScore(gameId, activeTeamId, -5)}>-5</button>
-              <button className="rounded-xl border px-2 py-2" onClick={() => activeTeamId && adjustTeamScore(gameId, activeTeamId, -1)}>-1</button>
-              <button className="rounded-xl border px-2 py-2" onClick={() => activeTeamId && adjustTeamScore(gameId, activeTeamId, +1)}>+1</button>
-              <button className="rounded-xl border px-2 py-2" onClick={() => activeTeamId && adjustTeamScore(gameId, activeTeamId, +5)}>+5</button>
-            </div>
-
-            <div className="mt-3 flex gap-2">
-              <button
-                className="rounded-xl border px-3 py-2 hover:bg-white/5 transition"
-                onClick={() => activeTeamId && resetTeamScore(gameId, activeTeamId)}
-              >
-                Reset wyniku aktywnej
-              </button>
-
-              <button
-                className="rounded-xl border px-3 py-2 hover:bg-white/5 transition"
-                onClick={() => resetAllTeamScores(gameId, teams.map(t => t.id))}
-              >
-                Reset wszystkich
-              </button>
-            </div>
-            <div className="mt-3 flex gap-2">
-            <input
-              className="w-28 rounded-xl border bg-transparent px-3 py-2"
-              inputMode="numeric"
-              value={manualScore}
-              onChange={(e) => setManualScore(e.target.value)}
-              placeholder="np. 120"
-            />
-            <button
-              className="rounded-xl border px-3 py-2 hover:bg-white/5 transition"
-              onClick={() => {
-                if (!activeTeamId) return;
-                const v = Number(manualScore);
-                if (!Number.isFinite(v)) return;
-                setTeamScore(gameId, activeTeamId, v);
-              }}
+        {/* Bottom bar (thumb controls) */}
+        <div className="sticky bottom-2 z-10">
+          <div className="rounded-2xl border border-white/10 bg-black/70 backdrop-blur p-2 flex items-center gap-2">
+            <Button
+              className="flex-1 rounded-2xl bg-amber-200 text-black hover:bg-amber-200/90 h-12"
+              onClick={bankToActive}
+              disabled={!activeTeamId || !bank}
+              title="Przyznaj BANK aktywnej drużynie"
             >
-              Ustaw wynik
-            </button>
+              BANK
+            </Button>
+
+            <Button
+              variant="secondary"
+              size="icon"
+              className="h-12 w-12 rounded-2xl"
+              onClick={addX}
+              disabled={!activeTeamId}
+              title="Dodaj X aktywnej drużynie"
+            >
+              <X size={18} />
+            </Button>
+
+            <Button
+              variant="secondary"
+              size="icon"
+              className="h-12 w-12 rounded-2xl"
+              onClick={undoX}
+              disabled={!activeTeamId || activeStrikes <= 0}
+              title="Cofnij X (usuń jeden błąd)"
+            >
+              <Minus size={18} />
+            </Button>
+
+            <Button
+              variant="secondary"
+              size="icon"
+              className="h-12 w-12 rounded-2xl"
+              onClick={resetRevealsOnly}
+              title="Reset odkryć"
+            >
+              <RotateCcw size={18} />
+            </Button>
           </div>
-          </Drawer>
-                
-          <Drawer
-            title="Przejęcie"
-            icon={<Shuffle size={18} />}
-            open={openSteal}
-            onToggle={() => setOpenSteal((v) => !v)}
-            right={<span className="text-xs opacity-70">{stealEnabled ? "ON" : "OFF"}</span>}
-          >
-            <div className="text-xs opacity-70">
-              Przejmuje: <span className="opacity-90">{stealTeam?.name ?? "—"}</span>
-            </div>
-
-            <div className="mt-3 flex gap-2 overflow-auto pb-1">
-              {teams
-                .filter((t) => t.id !== activeTeamId)
-                .map((t) => (
-                  <button
-                    key={t.id}
-                    className={[
-                      "shrink-0 rounded-2xl border px-3 py-2 text-sm font-semibold transition",
-                      t.id === stealTeamId ? "bg-white text-black" : "bg-white/5 border-white/10 hover:bg-white/10",
-                    ].join(" ")}
-                    onClick={() => setSteal(gameId, true, t.id)}
-                  >
-                    {t.name}
-                  </button>
-                ))}
-            </div>
-
-            <div className="mt-3 flex gap-2 flex-wrap">
-              <button className="rounded-2xl border px-3 py-2 hover:bg-white/5 transition" onClick={() => setSteal(gameId, false, null)}>
-                Wyłącz
-              </button>
-
-              {stealEnabled && stealTeamId && (
-                <>
-                  <button
-                    className="rounded-2xl bg-white text-black px-3 py-2 font-black"
-                    onClick={async () => {
-                      await awardPoints(gameId, stealTeamId, bank);
-                      await setSteal(gameId, false, null);
-                      await clearReveals(gameId);
-                      await triggerSfx(gameId, "win");
-                      await advanceAfterBank();
-                    }}
-                  >
-                    Sukces
-                  </button>
-
-                  <button
-                    className="rounded-2xl border px-3 py-2 hover:bg-white/5 transition"
-                    onClick={async () => {
-                      await addStrike(gameId, stealTeamId);
-                      await triggerSfx(gameId, "wrong");
-                      await setSteal(gameId, false, null);
-                      await clearReveals(gameId);
-                      await advanceAfterBank();
-                    }}
-                  >
-                    Porażka
-                  </button>
-                </>
-              )}
-            </div>
-          </Drawer>
-
-          <Drawer
-            title="Czas / Reset"
-            icon={<TimerIcon size={18} />}
-            open={openTime}
-            onToggle={() => setOpenTime((v) => !v)}
-            right={<Timer running={!!live?.timer?.running} startedAtMs={startedAtMs} durationSec={live?.timer?.durationSec ?? 20} />}
-          >
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                className="rounded-2xl border px-3 py-3 font-black hover:bg-white/5 transition flex items-center justify-center gap-2"
-                onClick={() => startTimer(gameId, currentQuestion?.timeLimitSec ?? 20)}
-              >
-                <PlayIcon size={18} /> Start
-              </button>
-              <button
-                className="rounded-2xl border px-3 py-3 font-black hover:bg-white/5 transition flex items-center justify-center gap-2"
-                onClick={() => stopTimer(gameId)}
-              >
-                <Square size={18} /> Stop
-              </button>
-              <button
-                className="rounded-2xl border px-3 py-3 font-black hover:bg-white/5 transition flex items-center justify-center gap-2"
-                onClick={() => clearReveals(gameId)}
-              >
-                <RotateCcw size={18} /> Reset
-              </button>
-            </div>
-
-            <label className="mt-3 flex items-center justify-between gap-3 text-sm">
-              <span className="opacity-80">Timer na TV</span>
-              <input
-                type="checkbox"
-                checked={live?.timerEnabled ?? false}
-                onChange={(e) => setTimerEnabled(gameId, e.target.checked)}
-              />
-            </label>
-          </Drawer>
-
-          <Drawer
-            title="Dźwięki (TV)"
-            icon={<Volume2 size={18} />}
-            open={openSfx}
-            onToggle={() => setOpenSfx((v) => !v)}
-          >
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                className="rounded-2xl border px-3 py-3 font-black hover:bg-white/5 transition flex items-center justify-center gap-2"
-                onClick={() => triggerSfx(gameId, "intro")}
-              >
-                <Sparkles size={18} /> Intro
-              </button>
-              <button
-                className="rounded-2xl border px-3 py-3 font-black hover:bg-white/5 transition flex items-center justify-center gap-2"
-                onClick={() => triggerSfx(gameId, "reveal")}
-              >
-                <Zap size={18} /> Reveal
-              </button>
-              <button
-                className="rounded-2xl border px-3 py-3 font-black hover:bg-white/5 transition flex items-center justify-center gap-2"
-                onClick={() => triggerSfx(gameId, "wrong")}
-              >
-                <XCircle size={18} /> Wrong
-              </button>
-              <button
-                className="rounded-2xl bg-white text-black px-3 py-3 font-black hover:opacity-90 transition flex items-center justify-center gap-2"
-                onClick={() => triggerSfx(gameId, "win")}
-              >
-                <Trophy size={18} /> Win
-              </button>
-            </div>
-
-            <div className="mt-2 text-xs opacity-60">
-              Pliki: <b>public/sfx/intro.mp3</b>, <b>reveal.mp3</b>, <b>wrong.mp3</b>, <b>win.mp3</b>
-            </div>
-          </Drawer>
         </div>
       </div>
     </main>

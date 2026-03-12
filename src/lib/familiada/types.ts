@@ -69,4 +69,48 @@ export type LiveStateDoc = {
     at: any | null;      // serverTimestamp
     durationMs: number;  // np. 2500
   } | null;
+  final?: LiveFinalState;
 };
+export type FinalPlayerDoc = {
+  name: string;
+  index: number;
+  score: number;
+  createdAt?: any;
+  updatedAt?: any;
+};
+
+export type FinalQuestionDoc = {
+  text: string;
+  index: number;
+  timeLimitSec?: number;
+  answers: Array<{ text: string; points: number }>;
+  createdAt?: any;
+  updatedAt?: any;
+};
+
+export type FinalResponseDoc = {
+  questionId: string;
+  questionIndex: number;
+  playerId: string;
+  playerName: string;
+  playerIndex: number;
+
+  inputText: string;     // co powiedział uczestnik
+  answerIndex: number;   // którą odpowiedź “przypisał” prowadzący
+  points: number;
+
+  revealed: boolean;     // czy punkty są odkryte na TV
+
+  createdAt?: any;
+  updatedAt?: any;
+};
+
+export type LiveFinalState = {
+  enabled: boolean;
+  questionId: string | null;
+  activePlayerId: string | null;
+  usedByQuestion: Record<string, number[]>;
+};
+
+/// w LiveStateDoc dopisz:
+/// final?: LiveFinalState;
